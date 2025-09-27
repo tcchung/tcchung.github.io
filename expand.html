@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mental Math: Expressions</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior-y: contain; /* Prevents pull-to-refresh */
+        }
+        /* Hide number input arrows */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        .fade-out {
+            animation: fadeOut 0.5s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+
+        // --- Seeded PRNG Functions ---
+        function mulberry32(a) {
+            return function() {
+                var t = a += 0x6D2B79F5;
+                t = Math.imul(t ^ t >>> 15, t | 1);
+                t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
+        }
+
+        function generateSeedString() {
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
+        }
+
+        // --- Helper Functions ---
+        const getRandomCoeff = (rng) => { let num; do { num = Math.floor(rng() * 11) - 5; } while (num === 0); return num; };
+        const getRandomPositiveCoeff = (rng) => Math.floor(rng() * 5) + 1;
+        
+        const formatPolynomial = (c2, c1, c0) => {
+            let parts = [];
+            if (c2 !== 0) parts.push(c2 === 1 ? "x²" : c2 === -1 ? "-x²" : `${c2}x²`);
+            if (c1 !== 0) {
+                const sign = c1 > 0 ? "+" : "-";
+                const absC1 = Math.abs(c1);
+                const c1Str = absC1 === 1 ? "x" : `${absC1}x`;
+                if (parts.length > 0) parts.push(` ${sign} ${c1Str}`);
+                else parts.push(c1 > 0 ? c1Str : `-${c1Str}`);
+            }
+            if (c0 !== 0) {
+                const sign = c0 > 0 ? "+" : "-";
+                if (parts.length > 0) parts.push(` ${sign} ${Math.abs(c0)}`);
+                else parts.push(c0.toString());
+            }
+            return parts.length === 0 ? "0" : parts.join("").trim();
+        };
+
+        // --- UI Components ---
+        const KeypadButton = ({ children, onClick, className = "" }) => (
+            <button
+                type="button"
+                onClick={onClick}
+                className={`flex items-center justify-center text-2xl font-bold bg-slate-700 hover:bg-slate-600 rounded-lg h-14 transition-all active:scale-95 ${className}`}
+            >
+                {children}
+            </button>
+        );
+
+        const Keypad = ({ onKeyPress, activeInput }) => {
+            return (
+                <div className="grid grid-cols-4 gap-2 p-2 bg-slate-800 rounded-t-xl">
+                    {/* Row 1 */}
+                    <KeypadButton onClick={() => onKeyPress('7')}>7</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('8')}>8</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('9')}>9</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('-')} className="text-3xl">±</KeypadButton>
+
+                    {/* Row 2 */}
+                    <KeypadButton onClick={() => onKeyPress('4')}>4</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('5')}>5</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('6')}>6</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('⌫')} className="bg-red-500/50 hover:bg-red-500/70">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"></path><line x1="18" y1="9" x2="12" y2="15"></line><line x1="12" y1="9" x2="18" y2="15"></line></svg>
+                    </KeypadButton>
+
+                    {/* Row 3 */}
+                    <KeypadButton onClick={() => onKeyPress('1')}>1</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('2')}>2</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('3')}>3</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('Check')} className="row-span-2 bg-green-600/80 hover:bg-green-600">Check</KeypadButton>
+
+                    {/* Row 4 */}
+                    <KeypadButton onClick={() => onKeyPress('Prev')}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>
+                    </KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('0')}>0</KeypadButton>
+                    <KeypadButton onClick={() => onKeyPress('Next')} className={activeInput === 'c0' ? 'bg-green-600/50' : ''}>
+                        {activeInput === 'c0' ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+                        )}
+                    </KeypadButton>
+                    {/* 4th column slot is occupied by the 'Check' button */}
+                </div>
+            );
+        };
+
+        // --- Main App Component ---
+        const App = () => {
+            const [gameState, setGameState] = useState('start');
+            const [level, setLevel] = useState(1);
+            const [problem, setProblem] = useState({ question: '', answer: '', c2: 1, c1: 0, c0: 0 });
+            const [userCoeffs, setUserCoeffs] = useState({ c2: '', c1: '', c0: '' });
+            const [message, setMessage] = useState('');
+            const [isRevealed, setIsRevealed] = useState(false);
+            const [score, setScore] = useState(0);
+            const [timer, setTimer] = useState(20);
+            const [isTimerRunning, setIsTimerRunning] = useState(false);
+            const [questionCount, setQuestionCount] = useState(0);
+            const [seed, setSeed] = useState('');
+            const [inputSeed, setInputSeed] = useState('');
+            const [activeInput, setActiveInput] = useState('c1');
+            const [copyMessage, setCopyMessage] = useState('');
+
+            const randomGenerator = useRef(() => Math.random());
+            const TIMER_DURATION = 20;
+            const MIN_TIME_ALLOWED = 3;
+            const [timeAllowed, setTimeAllowed] = useState(TIMER_DURATION);
+
+            const handleCheckAnswer = useCallback(() => {
+                if (isRevealed) return;
+                setIsTimerRunning(false);
+                const userC2 = level === 1 ? 1 : parseInt(userCoeffs.c2 || '0', 10);
+                const userC1 = parseInt(userCoeffs.c1 || '0', 10);
+                const userC0 = parseInt(userCoeffs.c0 || '0', 10);
+
+                if (userC2 === problem.c2 && userC1 === problem.c1 && userC0 === problem.c0) {
+                    setMessage('Correct! Well done!');
+                    setIsRevealed(true);
+                    setTimeout(() => {
+                        setScore(prev => prev + 1);
+                        setTimeAllowed(prev => Math.max(MIN_TIME_ALLOWED, Math.round(prev * 0.9 * 1000) / 1000));
+                        setQuestionCount(prev => prev + 1);
+                    }, 1200);
+                } else {
+                    setMessage('Incorrect. Game Over!');
+                    setIsRevealed(true); setGameState('gameOver');
+                }
+            }, [isRevealed, level, userCoeffs, problem]);
+
+            const generateProblem = useCallback(() => {
+                const rng = randomGenerator.current;
+                let question, answer, c2, c1, c0;
+                if (level === 1) {
+                    const a = getRandomCoeff(rng); const b = getRandomCoeff(rng);
+                    const termA = a > 0 ? `x + ${a}` : `x - ${Math.abs(a)}`;
+                    const termB = b > 0 ? `x + ${b}` : `x - ${Math.abs(b)}`;
+                    question = `(${termA})(${termB})`;
+                    c2 = 1; c1 = a + b; c0 = a * b;
+                } else {
+                    const p = getRandomPositiveCoeff(rng); const q = getRandomCoeff(rng);
+                    const r = getRandomPositiveCoeff(rng); const s = getRandomCoeff(rng);
+                    const termA = (p === 1 ? 'x' : `${p}x`) + (q > 0 ? ` + ${q}` : ` - ${Math.abs(q)}`);
+                    const termB = (r === 1 ? 'x' : `${r}x`) + (s > 0 ? ` + ${s}` : ` - ${Math.abs(s)}`);
+                    question = `(${termA})(${termB})`;
+                    c2 = p * r; c1 = p * s + q * r; c0 = q * s;
+                }
+                answer = formatPolynomial(c2, c1, c0);
+                setProblem({ question, answer, c2, c1, c0 });
+                setUserCoeffs({ c2: '', c1: '', c0: '' });
+                setMessage(''); setIsRevealed(false);
+                setTimer(timeAllowed); setIsTimerRunning(true);
+                setActiveInput(level === 1 ? 'c1' : 'c2');
+            }, [level, timeAllowed]);
+
+            useEffect(() => {
+                if (gameState === 'playing' && questionCount > 0) generateProblem();
+            }, [questionCount, generateProblem]);
+
+            useEffect(() => {
+                let interval;
+                if (isTimerRunning && timer > 0) interval = setInterval(() => setTimer(t => t - 1), 1000);
+                else if (timer <= 0 && !isRevealed) {
+                    setIsTimerRunning(false); setIsRevealed(true);
+                    setMessage("Time's up!"); setGameState('gameOver');
+                }
+                return () => clearInterval(interval);
+            }, [isTimerRunning, timer, isRevealed]);
+            
+            const handleStartGame = useCallback(() => {
+                const newSeed = inputSeed.trim() === '' ? generateSeedString() : inputSeed.trim();
+                setSeed(newSeed);
+                let hash = 0;
+                for (let i = 0; i < newSeed.length; i++) {
+                    const char = newSeed.charCodeAt(i); hash = ((hash << 5) - hash) + char; hash &= hash;
+                }
+                randomGenerator.current = mulberry32(hash);
+                setScore(0); setTimeAllowed(TIMER_DURATION);
+                setGameState('playing'); setQuestionCount(1);
+            }, [inputSeed]);
+
+            const handlePlayAgain = useCallback(() => { setInputSeed(''); setGameState('start'); }, []);
+
+            const handleKeyPress = useCallback((key) => {
+                if (isRevealed) return;
+                if (key === 'Check') { handleCheckAnswer(); return; }
+                
+                if (key === 'Next') {
+                    if (activeInput === 'c0') {
+                        handleCheckAnswer();
+                        return;
+                    }
+                    if (level === 1) {
+                        setActiveInput('c0');
+                    } else {
+                        setActiveInput(prev => (prev === 'c2' ? 'c1' : 'c0'));
+                    }
+                    return;
+                }
+                
+                if (key === 'Prev') {
+                    if (level === 1) {
+                        setActiveInput(prev => (prev === 'c0' ? 'c1' : 'c0'));
+                    } else {
+                        setActiveInput(prev => {
+                            if (prev === 'c0') return 'c1';
+                            if (prev === 'c1') return 'c2';
+                            return 'c0';
+                        });
+                    }
+                    return;
+                }
+
+                if (!activeInput) return;
+
+                const updateValue = (currentValue) => {
+                    if (key === '⌫') return currentValue.slice(0, -1);
+                    if (key === '-') return currentValue.startsWith('-') ? currentValue.substring(1) : '-' + currentValue;
+                    if (currentValue === '0' && key !== '0') return key;
+                    if (currentValue === '-0' && key !== '0') return '-' + key;
+                    if (currentValue.length >= 4) return currentValue;
+                    return currentValue + key;
+                };
+                setUserCoeffs(prev => ({ ...prev, [activeInput]: updateValue(prev[activeInput] || '') }));
+            }, [isRevealed, activeInput, level, handleCheckAnswer]);
+            
+            // Effect for Keyboard input
+            useEffect(() => {
+                const handleKeyDown = (event) => {
+                    if (gameState === 'start') {
+                        if (event.key === 'Enter') handleStartGame();
+                        return;
+                    }
+                    if (gameState === 'gameOver') {
+                        if (event.key === 'Enter') handlePlayAgain();
+                        return;
+                    }
+                    if (gameState === 'playing' && !isRevealed) {
+                        if (event.key >= '0' && event.key <= '9') {
+                            handleKeyPress(event.key);
+                        } else if (event.key === '-') {
+                            handleKeyPress('-');
+                        } else if (event.key === 'Backspace') {
+                            handleKeyPress('⌫');
+                        } else if (event.key === 'Enter' || event.key === 'ArrowRight') {
+                            handleKeyPress('Next');
+                        } else if (event.key === 'ArrowLeft') {
+                            handleKeyPress('Prev');
+                        }
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => {
+                    window.removeEventListener('keydown', handleKeyDown);
+                };
+            }, [gameState, isRevealed, handleKeyPress, handleStartGame, handlePlayAgain]);
+
+
+            const getTimerColor = () => {
+                const p = (timer / timeAllowed) * 100;
+                if (p > 60) return 'bg-cyan-500'; if (p > 30) return 'bg-yellow-500'; return 'bg-red-500';
+            };
+            
+            const handleCopyToClipboard = (text) => {
+                navigator.clipboard.writeText(text).then(() => {
+                    setCopyMessage('Seed Copied!');
+                    setTimeout(() => setCopyMessage(''), 2000);
+                }).catch(err => console.error('Failed to copy seed: ', err));
+            };
+
+            if (gameState === 'start') {
+                return (
+                    <div className="text-white min-h-screen flex flex-col items-center justify-center p-4">
+                        <div className="w-full max-w-lg bg-slate-800 rounded-2xl shadow-2xl p-8 text-center fade-in">
+                            <h1 className="text-5xl font-bold text-cyan-400 mb-4">Mental Math</h1>
+                            <p className="text-slate-400 text-lg mb-8">Expand the expressions as fast as you can.</p>
+                            <div className="mb-8">
+                                <h2 className="text-2xl text-white mb-4">Select a Level</h2>
+                                <div className="flex justify-center items-center space-x-4">
+                                    <button onClick={() => setLevel(1)} className={`px-8 py-3 text-lg rounded-lg transition-all duration-300 ${level === 1 ? 'bg-cyan-500 text-white shadow-lg scale-110' : 'bg-slate-700 hover:bg-slate-600'}`}>Level 1</button>
+                                    <button onClick={() => setLevel(2)} className={`px-8 py-3 text-lg rounded-lg transition-all duration-300 ${level === 2 ? 'bg-cyan-500 text-white shadow-lg scale-110' : 'bg-slate-700 hover:bg-slate-600'}`}>Level 2</button>
+                                </div>
+                            </div>
+                            <div className="mb-8">
+                                <label htmlFor="seedInput" className="text-lg text-slate-400 mb-2 block">Enter Game Seed (Optional)</label>
+                                <input id="seedInput" type="text" value={inputSeed} onChange={(e) => setInputSeed(e.target.value)} placeholder="e.g., A4TG2X" className="w-full bg-slate-700 border-2 border-slate-600 rounded-lg p-3 text-lg text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                            </div>
+                            <button onClick={handleStartGame} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 text-xl rounded-lg transition-transform transform hover:scale-105">
+                                Start Game
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (gameState === 'gameOver') {
+                return (
+                     <div className="text-white min-h-screen flex flex-col items-center justify-center p-4 relative">
+                        {copyMessage && <div className="absolute top-10 bg-green-500 text-white px-4 py-2 rounded-md fade-in">{copyMessage}</div>}
+                        <div className="w-full max-w-lg bg-slate-800 rounded-2xl shadow-2xl p-8 text-center fade-in">
+                            <h1 className="text-5xl font-bold text-red-500 mb-4">Game Over</h1>
+                             <p className="text-slate-400 text-lg mb-2">{message}</p>
+                            <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
+                                <p className="text-md text-slate-400 mb-1">Your Question:</p>
+                                <p className="text-xl font-mono text-green-300 mb-3">{problem.question}</p>
+                                <p className="text-md text-slate-400 mb-1">The correct answer was:</p>
+                                <p className="text-xl font-mono text-cyan-300">{problem.answer}</p>
+                            </div>
+                            <div className="bg-slate-900 rounded-xl p-6 mb-8">
+                                <div className="flex justify-center items-center mb-4">
+                                    <p className="text-slate-400 text-lg mr-3">Game Seed: <span className="font-mono text-yellow-300">{seed}</span></p>
+                                    <button onClick={() => handleCopyToClipboard(seed)} title="Copy Seed" className="p-2 bg-slate-700 hover:bg-slate-600 rounded-md">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-clipboard" viewBox="0 0 16 16">
+                                            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <p className="text-slate-400 text-lg">Final Score (Level {level})</p>
+                                <p className="text-7xl font-bold text-yellow-400">{score}</p>
+                            </div>
+                            <button onClick={handlePlayAgain} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-4 text-xl rounded-lg transition-transform transform hover:scale-105">
+                                Play Again
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="text-white h-screen flex flex-col items-center justify-between font-sans p-2">
+                    <div className="w-full max-w-2xl bg-slate-800 rounded-2xl shadow-2xl p-4 flex flex-col flex-grow">
+                        <div className="flex justify-between items-center mb-4">
+                            <div className="flex items-center space-x-2 text-lg font-mono bg-slate-900 px-3 py-1.5 rounded-lg">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                <span className={`transition-colors duration-500 ${timer <= (timeAllowed * 0.3) ? 'text-red-500 font-bold' : 'text-slate-300'}`}>{Math.ceil(timer)}s</span>
+                            </div>
+                            <div className="bg-slate-900 px-3 py-1.5 rounded-lg">
+                                <span className="font-bold text-lg text-cyan-400">Score: {score}</span>
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-900 rounded-xl p-6 mb-4 relative overflow-hidden flex-grow flex items-center justify-center">
+                            <p className="text-3xl md:text-4xl font-mono tracking-wider text-green-300">{problem.question}</p>
+                            <div className="absolute bottom-0 left-0 w-full h-2 bg-slate-700/50">
+                                <div className={`h-full transition-all ease-linear duration-1000 ${getTimerColor()}`} style={{ width: `${(timer / timeAllowed) * 100}%` }}></div>
+                            </div>
+                        </div>
+
+                        <form onSubmit={(e) => { e.preventDefault(); handleCheckAnswer(); }} className="flex flex-col items-center justify-center gap-4 mb-4">
+                            <div className="flex items-center justify-center gap-x-1.5 sm:gap-x-2 flex-wrap">
+                                {level === 2 ? (
+                                    <>
+                                        <input readOnly onFocus={() => setActiveInput('c2')} value={userCoeffs.c2} className={`bg-slate-700 border-2 rounded-lg w-16 h-14 text-2xl text-center focus:outline-none disabled:opacity-50 ${activeInput === 'c2' ? 'ring-2 ring-cyan-500 border-transparent' : 'border-slate-600'}`} />
+                                        <span className="text-xl sm:text-2xl text-slate-300 font-medium">x² +</span>
+                                    </>
+                                ) : ( <span className="text-xl sm:text-2xl text-slate-300 font-medium">x² +</span> )}
+                                <input readOnly onFocus={() => setActiveInput('c1')} value={userCoeffs.c1} className={`bg-slate-700 border-2 rounded-lg w-16 h-14 text-2xl text-center focus:outline-none disabled:opacity-50 ${activeInput === 'c1' ? 'ring-2 ring-cyan-500 border-transparent' : 'border-slate-600'}`} />
+                                <span className="text-xl sm:text-2xl text-slate-300 font-medium">x +</span>
+                                <input readOnly onFocus={() => setActiveInput('c0')} value={userCoeffs.c0} className={`bg-slate-700 border-2 rounded-lg w-16 h-14 text-2xl text-center focus:outline-none disabled:opacity-50 ${activeInput === 'c0' ? 'ring-2 ring-cyan-500 border-transparent' : 'border-slate-600'}`} />
+                            </div>
+                        </form>
+                         {isRevealed && message.includes('Correct') && (
+                            <div className="my-2 p-3 rounded-lg bg-slate-700/50 fade-in text-center">
+                                <p className="font-semibold text-green-400">{message}</p>
+                            </div>
+                        )}
+                    </div>
+                    <div className="w-full max-w-2xl">
+                        <Keypad onKeyPress={handleKeyPress} activeInput={activeInput} />
+                    </div>
+                </div>
+            );
+        };
+        
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+
+</body>
+</html>
+
