@@ -393,7 +393,7 @@
                         </div>
 
                         <div className="bg-slate-900 rounded-xl p-6 mb-4 relative overflow-hidden flex-grow flex items-center justify-center">
-                            <p className="text-3xl md:text-4xl font-mono tracking-wider text-green-300">{problem.question}</p>
+                            <p className="text-3xl md:text-4xl font-mono tracking-wider text-green-300 whitespace-nowrap">{problem.question}</p>
                             <div className="absolute bottom-0 left-0 w-full h-2 bg-slate-700/50">
                                 <div className={`h-full transition-all ease-linear duration-1000 ${getTimerColor()}`} style={{ width: `${(timer / timeAllowed) * 100}%` }}></div>
                             </div>
