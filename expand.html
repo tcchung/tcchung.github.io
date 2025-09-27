@@ -322,7 +322,7 @@
 
             if (gameState === 'start') {
                 return (
-                    <div className="text-white min-h-screen flex flex-col items-center justify-center p-4">
+                    <div className="text-white flex flex-col items-center justify-center p-4" style={{ minHeight: '100dvh' }}>
                         <div className="w-full max-w-lg bg-slate-800 rounded-2xl shadow-2xl p-8 text-center fade-in">
                             <h1 className="text-5xl font-bold text-cyan-400 mb-4">Mental Math</h1>
                             <p className="text-slate-400 text-lg mb-8">Expand the expressions as fast as you can.</p>
@@ -347,7 +347,7 @@
 
             if (gameState === 'gameOver') {
                 return (
-                     <div className="text-white min-h-screen flex flex-col items-center justify-center p-4 relative">
+                     <div className="text-white flex flex-col items-center justify-center p-4 relative" style={{ minHeight: '100dvh' }}>
                         {copyMessage && <div className="absolute top-10 bg-green-500 text-white px-4 py-2 rounded-md fade-in">{copyMessage}</div>}
                         <div className="w-full max-w-lg bg-slate-800 rounded-2xl shadow-2xl p-8 text-center fade-in">
                             <h1 className="text-5xl font-bold text-red-500 mb-4">Game Over</h1>
@@ -380,7 +380,7 @@
             }
 
             return (
-                <div className="text-white h-screen flex flex-col items-center justify-between font-sans p-2">
+                <div className="text-white flex flex-col items-center justify-between font-sans p-2" style={{ height: '100dvh' }}>
                     <div className="w-full max-w-2xl bg-slate-800 rounded-2xl shadow-2xl p-4 flex flex-col flex-grow">
                         <div className="flex justify-between items-center mb-4">
                             <div className="flex items-center space-x-2 text-lg font-mono bg-slate-900 px-3 py-1.5 rounded-lg">
