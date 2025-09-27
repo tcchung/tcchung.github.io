@@ -226,7 +226,11 @@
                 setGameState('playing'); setQuestionCount(1);
             }, [inputSeed]);
 
-            const handlePlayAgain = useCallback(() => { setInputSeed(''); setGameState('start'); }, []);
+            const handlePlayAgain = useCallback(() => {
+                setInputSeed('');
+                setGameState('start');
+                setQuestionCount(0); // Reset question count to allow a new game to start
+            }, []);
 
             const handleKeyPress = useCallback((key) => {
                 if (isRevealed) return;
