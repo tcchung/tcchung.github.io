@@ -1,0 +1,537 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, Bell, Timer, Watch, ChevronRight, X, Moon, Sun, Monitor } from 'lucide-react';
+
+// --- Utility Functions ---
+const formatTime = (totalSeconds) => {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+const formatEndTime = (secondsRemaining) => {
+  const now = new Date();
+  const end = new Date(now.getTime() + secondsRemaining * 1000);
+  return end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
+const formatStopwatch = (time) => {
+  const m = Math.floor((time / 60000) % 60);
+  const s = Math.floor((time / 1000) % 60);
+  const ms = Math.floor((time / 10) % 100);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+};
+
+// --- Custom Hooks ---
+
+const useKeepScreenOn = (isActive) => {
+  const wakeLockRef = useRef(null);
+
+  useEffect(() => {
+    const requestLock = async () => {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
+        } catch (err) {
+          console.warn('Wake Lock error:', err);
+        }
+      }
+    };
+
+    const releaseLock = async () => {
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release();
+          wakeLockRef.current = null;
+        } catch (err) {
+          console.warn('Wake Lock release error:', err);
+        }
+      }
+    };
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && isActive) {
+        await requestLock();
+      }
+    };
+
+    if (isActive) {
+      requestLock();
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    } else {
+      releaseLock();
+    }
+
+    return () => {
+      releaseLock();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isActive]);
+};
+
+// --- Components ---
+
+// 1. Circular Progress Component
+const TimerCircle = ({ duration, timeLeft, isPaused, isDark, isFinished }) => {
+  // Increased radius from 140 to 220 for a much larger circle
+  const radius = 220;
+  const stroke = 10; // Slightly thinner stroke for elegance
+  const normalizedRadius = radius - stroke * 2;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  
+  // Calculate progress
+  const progress = duration > 0 ? timeLeft / duration : 0;
+  const strokeDashoffset = circumference - progress * circumference;
+
+  // Dynamic Colors
+  const ringBg = isDark ? "#1C1C1E" : "#E5E5EA"; // Dark Gray vs Light Gray
+  const ringColor = "#FF9F0A"; // Orange stays same
+  const mainText = isFinished 
+    ? "text-[#FF9F0A] animate-pulse" // Pulsing Orange when finished
+    : (isDark ? "text-white" : "text-black");
+  const subText = isDark ? "text-gray-400" : "text-gray-500";
+
+  return (
+    <div className="relative flex items-center justify-center scale-75 md:scale-100 transition-transform">
+      <svg
+        height={radius * 2}
+        width={radius * 2}
+        className="rotate-[-90deg] transform transition-all duration-100 ease-linear"
+        style={{ overflow: 'visible' }} // Ensure no clipping
+      >
+        {/* Background Ring */}
+        <circle
+          stroke={ringBg}
+          strokeWidth={stroke}
+          fill="transparent"
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+        {/* Progress Ring (Orange) */}
+        <circle
+          stroke={ringColor}
+          strokeWidth={stroke}
+          strokeDasharray={circumference + ' ' + circumference}
+          style={{ strokeDashoffset }}
+          strokeLinecap="round"
+          fill="transparent"
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+          // CHANGED: duration-1000 to duration-100 to match the 100ms interval tick
+          className={`transition-all duration-100 ease-linear ${timeLeft === duration ? 'duration-0' : ''}`}
+        />
+      </svg>
+      
+      {/* Center Content */}
+      <div className="absolute flex flex-col items-center justify-center text-center top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full">
+        {/* End Time Indicator - Hide when finished */}
+        {!isFinished && (
+            <div className={`flex items-center space-x-2 mb-4 text-xl font-medium ${subText}`}>
+            <Bell size={20} fill="currentColor" />
+            <span>{formatEndTime(timeLeft)}</span>
+            </div>
+        )}
+        
+        {/* Main Digital Timer */}
+        <div className={`text-[8rem] leading-none font-light tracking-tight font-mono tabular-nums mb-6 ${mainText}`}>
+          {formatTime(Math.ceil(timeLeft))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// 2. Input Component (iOS Style Picker)
+const TimePicker = ({ onStart, isDark }) => {
+  const [hours, setHours] = useState(0);
+  const [minutes, setMinutes] = useState(0); // Changed default from 5 to 0
+  const [seconds, setSeconds] = useState(0);
+
+  const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+  const isStartDisabled = totalSeconds === 0;
+
+  const handleStart = () => {
+    if (totalSeconds > 0) onStart(totalSeconds);
+  };
+
+  const inputClass = `text-7xl font-light p-6 rounded-2xl w-32 text-center focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all ${
+      isDark ? 'bg-[#1C1C1E] text-white' : 'bg-white text-black shadow-sm'
+  }`;
+  
+  const labelClass = isDark ? 'text-gray-400' : 'text-gray-500';
+  const separatorClass = isDark ? 'text-gray-600' : 'text-gray-300';
+  
+  const buttonClass = `w-28 h-28 rounded-full text-xl font-medium flex items-center justify-center ring-4 ring-offset-2 transition-all hover:scale-105 ${
+      isDark 
+        ? 'bg-[#1C1C1E] text-[#64D2FF] ring-[#1C1C1E] ring-offset-black' 
+        : 'bg-white text-[#007AFF] ring-white ring-offset-[#F2F2F7] shadow-md'
+  } ${isStartDisabled ? 'opacity-50 cursor-not-allowed' : 'active:opacity-80'}`;
+
+  return (
+    <div className="flex-col items-center justify-center h-full space-y-16 flex">
+      <div className="flex items-center justify-center space-x-4">
+        <div className="flex flex-col items-center">
+            <input 
+                type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={hours} 
+                onChange={(e) => setHours(Math.min(23, Math.max(0, parseInt(e.target.value) || 0)))}
+                className={inputClass}
+            />
+            <span className={`${labelClass} mt-4 text-xl`}>hours</span>
+        </div>
+        <span className={`text-6xl mb-12 ${separatorClass}`}>:</span>
+        <div className="flex flex-col items-center">
+            <input 
+                type="number" 
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={minutes} 
+                onChange={(e) => setMinutes(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+                className={inputClass}
+            />
+            <span className={`${labelClass} mt-4 text-xl`}>min</span>
+        </div>
+        <span className={`text-6xl mb-12 ${separatorClass}`}>:</span>
+        <div className="flex flex-col items-center">
+            <input 
+                type="number" 
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={seconds} 
+                onChange={(e) => setSeconds(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+                className={inputClass}
+            />
+            <span className={`${labelClass} mt-4 text-xl`}>sec</span>
+        </div>
+      </div>
+
+      <button 
+        onClick={handleStart}
+        disabled={isStartDisabled}
+        className={buttonClass}
+      >
+        Start
+      </button>
+    </div>
+  );
+};
+
+// 3. Main Timer Tab
+const TimerView = ({ isDark }) => {
+  const [isRunning, setIsRunning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const timerRef = useRef(null);
+
+  // Activate Wake Lock when running and not paused
+  useKeepScreenOn(isRunning && !isPaused);
+
+  useEffect(() => {
+    if (isRunning && !isPaused && timeLeft > 0) {
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+            if (prev <= 0.1) {
+                clearInterval(timerRef.current);
+                setIsFinished(true);
+                return 0;
+            }
+            return prev - 0.1;
+        });
+      }, 100);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [isRunning, isPaused, timeLeft]);
+
+  const startTimer = (seconds) => {
+    setDuration(seconds);
+    setTimeLeft(seconds);
+    setIsRunning(true);
+    setIsPaused(false);
+    setIsFinished(false);
+  };
+
+  const togglePause = () => {
+    setIsPaused(!isPaused);
+  };
+
+  const cancelTimer = () => {
+    setIsRunning(false);
+    setIsPaused(false);
+    setIsFinished(false);
+    setTimeLeft(0);
+  };
+
+  // Control Button Styles
+  const cancelBtnClass = `w-24 h-24 rounded-full flex items-center justify-center active:bg-opacity-70 transition-all group ${
+    isDark 
+      ? 'bg-[#333333] hover:bg-[#444]' 
+      : 'bg-[#E5E5EA] hover:bg-[#D1D1D6]'
+  }`;
+  
+  const cancelTextClass = `text-xl font-medium ${isDark ? 'text-white' : 'text-[#8E8E93]'}`; // iOS cancel style
+
+  const actionBtnClass = (active) => `w-24 h-24 rounded-full flex items-center justify-center transition-all active:opacity-80 hover:opacity-90 ${
+    active
+        ? (isDark ? 'bg-[#1C431E] text-[#30D158]' : 'bg-[#DAFAD9] text-[#248A3D]') // Resume/Start (Green)
+        : (isDark ? 'bg-[#382208] text-[#FF9F0A]' : 'bg-[#FFF5DE] text-[#FF9F0A]') // Pause (Orange)
+  }`;
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center w-full relative p-4">
+      {!isRunning ? (
+        <TimePicker onStart={startTimer} isDark={isDark} />
+      ) : (
+        <>
+          {/* Main Circle Display */}
+          <div className="flex-1 flex items-center justify-center w-full">
+             <TimerCircle duration={duration} timeLeft={timeLeft} isPaused={isPaused} isDark={isDark} isFinished={isFinished} />
+          </div>
+
+          {/* Bottom Controls */}
+          <div className="w-full max-w-4xl flex justify-between items-center px-12 pb-16 md:absolute md:bottom-16 md:left-1/2 md:-translate-x-1/2 z-10">
+            
+            {/* Cancel/Stop Button */}
+            <button 
+              onClick={cancelTimer}
+              className={cancelBtnClass}
+            >
+              <span className={cancelTextClass}>{isFinished ? 'Stop' : 'Cancel'}</span>
+            </button>
+
+            {/* Pause/Resume Button - Hide if finished */}
+            {!isFinished && (
+                <button 
+                onClick={togglePause}
+                className={actionBtnClass(isPaused)}
+                >
+                <span className="text-xl font-medium">
+                    {isPaused ? 'Resume' : 'Pause'}
+                </span>
+                </button>
+            )}
+
+            {isFinished && <div className="w-24 h-24" />}
+
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// 4. Stopwatch Tab
+const StopwatchView = ({ isDark }) => {
+  const [time, setTime] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const [laps, setLaps] = useState([]);
+  const timerRef = useRef(null);
+
+  // Activate Wake Lock when stopwatch is running
+  useKeepScreenOn(isRunning);
+
+  useEffect(() => {
+    if (isRunning) {
+      const startTime = Date.now() - time;
+      timerRef.current = setInterval(() => {
+        setTime(Date.now() - startTime);
+      }, 10);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [isRunning]);
+
+  const toggleStart = () => {
+    setIsRunning(!isRunning);
+  };
+
+  const handleLapReset = () => {
+    if (isRunning) {
+      setLaps(prev => [{ id: prev.length + 1, time, split: time - (prev[0]?.time || 0) }, ...prev]);
+    } else {
+      setTime(0);
+      setLaps([]);
+    }
+  };
+
+  const minLap = laps.length > 1 ? Math.min(...laps.map(l => l.split)) : -1;
+  const maxLap = laps.length > 1 ? Math.max(...laps.map(l => l.split)) : -1;
+
+  // Styles
+  const mainText = isDark ? 'text-white' : 'text-black';
+  
+  const lapBtnClass = `w-24 h-24 rounded-full flex items-center justify-center active:bg-opacity-70 transition-all ${
+      isDark ? 'bg-[#333333]' : 'bg-[#E5E5EA]'
+  }`;
+  const lapTextClass = `text-lg font-medium ${isDark ? 'text-white' : 'text-black'}`;
+  
+  const startStopBtnClass = `w-24 h-24 rounded-full flex items-center justify-center active:opacity-70 transition-all ${
+      isRunning 
+        ? (isDark ? 'bg-[#330E0C] text-[#FF453A]' : 'bg-[#FFDADB] text-[#FF3B30]') // Stop (Red)
+        : (isDark ? 'bg-[#0A2A12] text-[#30D158]' : 'bg-[#DAFAD9] text-[#248A3D]') // Start (Green)
+  }`;
+
+  const pageDotActive = isDark ? 'bg-white' : 'bg-[#8E8E93]';
+  const pageDotInactive = isDark ? 'bg-white opacity-30' : 'bg-[#C7C7CC] opacity-50';
+  const borderClass = isDark ? 'border-[#2C2C2E]' : 'border-[#C6C6C8]';
+  const tableText = isDark ? 'text-white' : 'text-black';
+  const lapIndexColor = isDark ? 'text-gray-400' : 'text-gray-500';
+
+  return (
+    <div className="flex-1 flex flex-col items-center w-full pt-12">
+      <div className="flex-none h-72 flex items-center justify-center w-full">
+        <div className={`text-9xl font-light font-mono tabular-nums tracking-tight ${mainText}`}>
+          {formatStopwatch(time)}
+        </div>
+      </div>
+
+      <div className="flex w-full max-w-xl justify-between px-8 mb-12">
+        <button 
+          onClick={handleLapReset}
+          className={lapBtnClass}
+        >
+          <span className={lapTextClass}>
+            {isRunning ? 'Lap' : 'Reset'}
+          </span>
+        </button>
+
+        <div className="flex space-x-2 items-end pb-6"> 
+           <div className={`w-2 h-2 rounded-full ${pageDotActive}`}></div>
+           <div className={`w-2 h-2 rounded-full ${pageDotInactive}`}></div>
+        </div>
+
+        <button 
+          onClick={toggleStart}
+          className={startStopBtnClass}
+        >
+          <span className="text-lg font-medium">
+            {isRunning ? 'Stop' : 'Start'}
+          </span>
+        </button>
+      </div>
+
+      <div className={`flex-1 w-full max-w-3xl border-t ${borderClass} overflow-y-auto`}>
+        <table className={`w-full ${tableText}`}>
+            <tbody>
+                {laps.map((lap) => (
+                    <tr key={lap.id} className={`border-b ${borderClass} h-14 text-xl`}>
+                        <td className={`px-6 ${lapIndexColor}`}>Lap {laps.length - lap.id + 1}</td>
+                        <td className={`px-6 text-right font-mono tabular-nums ${
+                            lap.split === minLap ? 'text-green-500' : lap.split === maxLap ? 'text-red-500' : ''
+                        }`}>
+                            {formatStopwatch(lap.split)}
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// --- Main Layout ---
+
+export default function ClockApp() {
+  const [activeTab, setActiveTab] = useState('timer');
+  const [themeMode, setThemeMode] = useState('system'); // 'system', 'light', 'dark'
+  const [systemIsDark, setSystemIsDark] = useState(false);
+
+  // Handle System Preference Listener
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    setSystemIsDark(mediaQuery.matches);
+
+    const handler = (e) => setSystemIsDark(e.matches);
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+
+  // Determine effective theme
+  const isDark = themeMode === 'system' ? systemIsDark : themeMode === 'dark';
+
+  const cycleTheme = () => {
+    if (themeMode === 'system') setThemeMode('light');
+    else if (themeMode === 'light') setThemeMode('dark');
+    else setThemeMode('system');
+  };
+
+  const getThemeIcon = () => {
+    if (themeMode === 'system') return <Monitor size={20} />;
+    if (themeMode === 'light') return <Sun size={20} />;
+    return <Moon size={20} />;
+  };
+
+  const tabs = [
+    { id: 'stopwatch', label: 'Stopwatch', icon: Watch },
+    { id: 'timer', label: 'Timers', icon: Timer },
+  ];
+
+  // App Background
+  const appBg = isDark ? 'bg-black' : 'bg-[#F2F2F7]'; // Dark Black vs iOS Grouped Bg
+  const navColor = isDark ? 'text-white' : 'text-black';
+
+  return (
+    <div className={`min-h-screen flex flex-col font-sans selection:bg-orange-500 selection:text-white transition-colors duration-300 ${appBg} ${navColor}`}>
+      
+      <header className="relative flex items-center justify-center px-6 pt-6 pb-4 z-20">
+        
+        {/* Theme Toggle (Absolute Left) */}
+        <button 
+            onClick={cycleTheme}
+            className={`absolute left-6 p-2 rounded-full transition-colors flex items-center space-x-2 ${
+                isDark ? 'bg-[#1C1C1E] text-gray-300 hover:text-white' : 'bg-white text-gray-600 hover:text-black shadow-sm'
+            }`}
+            title={`Current: ${themeMode.charAt(0).toUpperCase() + themeMode.slice(1)} Mode`}
+        >
+            {getThemeIcon()}
+            <span className="text-sm font-medium hidden md:block">
+                {themeMode.charAt(0).toUpperCase() + themeMode.slice(1)}
+            </span>
+        </button>
+
+        <div className="flex space-x-2 md:space-x-10 overflow-x-auto no-scrollbar mx-auto">
+            {tabs.map((tab) => (
+                <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex flex-col md:flex-row items-center space-y-1 md:space-y-0 md:space-x-2 px-4 py-2 rounded-full transition-colors duration-200 
+                        ${activeTab === tab.id ? 'text-orange-500' : (isDark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`}
+                >
+                   <span className="md:hidden"><tab.icon size={28} /></span>
+                   <span className="text-xs md:text-2xl font-medium hidden md:block">{tab.label}</span>
+                   <span className="text-xs md:text-xl font-medium md:hidden block">{tab.label}</span>
+                </button>
+            ))}
+        </div>
+      </header>
+
+      <main className="flex-1 flex flex-col relative overflow-hidden">
+        {activeTab === 'timer' && <TimerView isDark={isDark} />}
+        {activeTab === 'stopwatch' && <StopwatchView isDark={isDark} />}
+      </main>
+      
+      <style>{`
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
+    </div>
+  );
+}
