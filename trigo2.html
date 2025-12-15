@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trigo Trainer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;800&display=swap');
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+
+        .math-text {
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap; /* Prevent breaking on large screens */
+        }
+
+        /* Animation for new questions */
+        @keyframes slideIn {
+            0% { opacity: 0; transform: translateY(10px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-pop {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 min-h-screen flex items-center justify-center p-4">
+
+    <!-- Increased max-width to 7xl to accommodate side-by-side layout -->
+    <div class="glass-panel w-full max-w-7xl rounded-3xl p-8 text-center relative overflow-hidden">
+        
+        <!-- Decoration Circles -->
+        <div class="absolute -top-10 -left-10 w-32 h-32 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
+        <div class="absolute -bottom-10 -right-10 w-32 h-32 bg-yellow-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
+
+        <!-- Header -->
+        <div class="relative z-10 mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 tracking-tight">Trigo Trainer</h1>
+            <p class="text-sm text-gray-500 mt-2">Randomized Trigonometry Drills</p>
+        </div>
+
+        <!-- Main Display Area -->
+        <div id="game-area" class="relative z-10 min-h-[400px] flex flex-col justify-center">
+            
+            <!-- Initial State -->
+            <div id="start-view" class="block flex flex-col items-center justify-center h-full py-20">
+                <div class="text-6xl text-indigo-500 mb-4">
+                    <i class="fa-solid fa-shapes"></i>
+                </div>
+                <p class="text-gray-600 text-lg">Press Generate to start</p>
+            </div>
+
+            <!-- Question View (Hidden initially) -->
+            <div id="question-view" class="hidden w-full">
+                <!-- ID Badge - Full Width Top -->
+                <div class="flex flex-col items-center mb-12 border-b border-gray-100 pb-8">
+                    <span class="text-gray-400 text-xl font-bold uppercase tracking-widest mb-2">Student ID</span>
+                    <span id="student-id" class="text-9xl font-black text-indigo-600 leading-none">--</span>
+                </div>
+
+                <!-- Content Grid: Side by Side -->
+                <div class="flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-16 mb-12">
+                    
+                    <!-- Left Column: Math Problem -->
+                    <div class="flex-1 flex justify-center lg:justify-end w-full">
+                        <p id="problem-text" class="text-7xl md:text-8xl lg:text-9xl font-extrabold text-gray-800 math-text leading-tight animate-pop">
+                            <!-- Problem goes here -->
+                        </p>
+                    </div>
+                    
+                    <!-- Right Column: Visual Hint (Triangle) -->
+                    <div id="triangle-container" class="flex-1 flex justify-center lg:justify-start w-full">
+                        <!-- SVG will be injected here -->
+                    </div>
+                </div>
+                
+                <!-- Progress Bar -->
+                <div class="max-w-3xl mx-auto w-full">
+                    <div class="w-full bg-gray-200 rounded-full h-1.5 mb-1">
+                        <div id="progress-bar" class="bg-gradient-to-r from-indigo-500 to-pink-500 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-xs text-gray-400 mb-4">
+                        <span>Progress</span>
+                        <span id="progress-text">0 / 68</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- End View (Hidden initially) -->
+            <div id="end-view" class="hidden py-20">
+                <div class="text-6xl text-green-500 mb-4">
+                    <i class="fa-solid fa-flag-checkered"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Session Complete!</h2>
+                <p class="text-gray-500">You've gone through all items.</p>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="relative z-10 mt-6 max-w-md mx-auto">
+            <button id="action-btn" onclick="gen()" class="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition hover:-translate-y-1 hover:shadow-xl active:translate-y-0 focus:outline-none focus:ring-4 focus:ring-indigo-300">
+                Generate
+            </button>
+            <button id="reset-btn" onclick="resetGame()" class="hidden w-full mt-3 bg-white border-2 border-gray-200 text-gray-700 font-bold py-3 px-6 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition focus:outline-none">
+                Restart
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Logic ---
+
+        // Shuffle function
+        const shuffle = (v) => {
+            for (let j, x, i = v.length; i; j = parseInt(Math.random() * i), x = v[--i], v[i] = v[j], v[j] = x);
+            return v;
+        };
+
+        // State variables
+        let deck = [];
+        let count = 0;
+        let lastR = -1;
+        const totalItems = 68; // 34 * 2
+
+        // Initialize Deck
+        function initDeck() {
+            deck = [];
+            for (let i = 0; i < 34; deck.push(i + 1), i++);
+            for (let i = 0; i < 34; deck.push(i + 1), i++);
+            deck = shuffle(deck);
+            count = 0;
+            lastR = -1;
+        }
+
+        // Initialize on load
+        initDeck();
+
+        // UI Elements
+        const startView = document.getElementById('start-view');
+        const questionView = document.getElementById('question-view');
+        const endView = document.getElementById('end-view');
+        const studentIdEl = document.getElementById('student-id');
+        const problemTextEl = document.getElementById('problem-text');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const actionBtn = document.getElementById('action-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        function updateProgress() {
+            const percentage = (count / totalItems) * 100;
+            progressBar.style.width = `${percentage}%`;
+            progressText.innerText = `${count} / ${totalItems}`;
+        }
+
+        function gen() {
+            // Switch from start view if it's the first click
+            if (!startView.classList.contains('hidden')) {
+                startView.classList.add('hidden');
+                questionView.classList.remove('hidden');
+                actionBtn.innerText = "Next Question";
+            }
+
+            // Check for End Game
+            if (count >= deck.length) {
+                showEndGame();
+                return;
+            }
+
+            // --- Core Logic from original file ---
+            let x = deck[count++];
+            
+            // Format ID (The number in brackets)
+            studentIdEl.innerText = x;
+
+            // Generate Problem
+            let problemString = "";
+            let r;
+            
+            // Ensure the new problem is not the same as the previous one
+            do {
+                r = Math.floor(Math.random() * 9);
+            } while (r === lastR);
+            
+            lastR = r;
+            
+            // Trig function
+            if (r % 3 == 0) problemString += "sin ";
+            if (r % 3 == 1) problemString += "cos ";
+            if (r % 3 == 2) problemString += "tan ";
+
+            // Angle
+            let angleVal = 0;
+            if (Math.floor(r / 3) == 0) { problemString += "30°"; angleVal = 30; }
+            if (Math.floor(r / 3) == 1) { problemString += "45°"; angleVal = 45; }
+            if (Math.floor(r / 3) == 2) { problemString += "60°"; angleVal = 60; }
+
+            // Update UI
+            // We remove the class first to trigger re-animation
+            problemTextEl.classList.remove('animate-pop');
+            void problemTextEl.offsetWidth; // Trigger reflow
+            problemTextEl.classList.add('animate-pop');
+            
+            problemTextEl.innerText = problemString;
+            
+            drawTriangle(angleVal);
+            
+            updateProgress();
+        }
+
+        function drawTriangle(angle) {
+            const container = document.getElementById('triangle-container');
+            const rad = angle * Math.PI / 180;
+            
+            // Increased scale for larger figure
+            const scale = 350; 
+            
+            // Calculate sides
+            const adj = Math.cos(rad) * scale;
+            const opp = Math.sin(rad) * scale;
+            
+            // Dynamic dimensions to fit tightly with minimal padding
+            const paddingX = 40;
+            const paddingY = 40;
+            const viewWidth = adj + paddingX;
+            const viewHeight = opp + paddingY;
+
+            // Coordinates
+            // p1 is bottom-left (angle vertex), slightly offset for stroke/padding
+            const startX = 10; 
+            const startY = viewHeight - 10; 
+            
+            const p1 = { x: startX, y: startY }; 
+            const p2 = { x: startX + adj, y: startY }; // Right angle vertex
+            const p3 = { x: startX + adj, y: startY - opp }; // Top vertex
+
+            // Arc for angle
+            const arcSize = 70; // Larger arc for visibility
+            const arcEnd = {
+                x: p1.x + arcSize * Math.cos(rad),
+                y: p1.y - arcSize * Math.sin(rad)
+            };
+            
+            // SVG Path for the arc
+            const arcPath = `M ${p1.x + arcSize} ${p1.y} A ${arcSize} ${arcSize} 0 0 0 ${arcEnd.x} ${arcEnd.y}`;
+
+            // Right angle marker
+            const raSize = 25; // Larger marker
+            const raPath = `M ${p2.x - raSize} ${p2.y} L ${p2.x - raSize} ${p2.y - raSize} L ${p2.x} ${p2.y - raSize}`;
+
+            // Text Position
+            const textX = p1.x + 80;
+            const textY = p1.y - 15;
+
+            const svg = `
+            <svg width="${viewWidth}" height="${viewHeight}" viewBox="0 0 ${viewWidth} ${viewHeight}" xmlns="http://www.w3.org/2000/svg">
+                <!-- Triangle -->
+                <path d="M ${p1.x} ${p1.y} L ${p2.x} ${p2.y} L ${p3.x} ${p3.y} Z" 
+                      fill="none" stroke="#4b5563" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+                
+                <!-- Right Angle Marker -->
+                <path d="${raPath}" fill="none" stroke="#4b5563" stroke-width="3" />
+                
+                <!-- Angle Arc -->
+                <path d="${arcPath}" fill="none" stroke="#ef4444" stroke-width="3" />
+                
+                <!-- Angle Text -->
+                <text x="${textX}" y="${textY}" fill="#ef4444" font-family="sans-serif" font-weight="bold" font-size="32">
+                    ${angle}°
+                </text>
+            </svg>
+            `;
+            
+            container.innerHTML = svg;
+        }
+
+        function showEndGame() {
+            questionView.classList.add('hidden');
+            endView.classList.remove('hidden');
+            actionBtn.classList.add('hidden'); // Hide "Next" button
+            resetBtn.classList.remove('hidden'); // Show "Restart" button
+        }
+
+        function resetGame() {
+            initDeck();
+            
+            // Reset Views
+            endView.classList.add('hidden');
+            startView.classList.remove('hidden');
+            actionBtn.classList.remove('hidden');
+            resetBtn.classList.add('hidden');
+            
+            // Reset Text
+            actionBtn.innerText = "Generate";
+            updateProgress();
+        }
+
+    </script>
+</body>
+</html>
